@@ -3,6 +3,13 @@
 Una blockchain completa escrita desde cero en Python, con los mismos mecanismos que
 Bitcoin/Ethereum pero en ~900 líneas legibles y comentadas en español.
 
+![Explorador web de minichain](docs/explorador.png)
+
+<details><summary>Detalle de un bloque</summary>
+
+![Detalle de un bloque con sus transacciones](docs/bloque.png)
+</details>
+
 | Pieza | Cómo funciona aquí |
 |---|---|
 | **Carteras** | Claves Ed25519. Dirección = `mc` + 40 hex del SHA-256 de la clave pública. |
