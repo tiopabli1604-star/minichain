@@ -1,0 +1,20 @@
+[project]
+name = "minichain"
+version = "0.1.0"
+description = "Blockchain completa y didáctica: carteras Ed25519, prueba de trabajo, red de nodos y explorador web."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["cryptography>=41"]
+
+[project.scripts]
+minichain = "minichain.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/minichain"]

@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Explorador minichain</title>
+<style>
+:root{--bg:#f6f7fb;--panel:#fff;--fg:#141824;--mut:#687086;--line:#e3e6ee;--acc:#5b5bd6;--ok:#16a34a;--warn:#d97706;--mono:ui-monospace,Consolas,monospace}
+@media (prefers-color-scheme:dark){:root{--bg:#0d1017;--panel:#151a24;--fg:#e6e9f2;--mut:#8b93a8;--line:#232a38;--acc:#8b8cf0;--ok:#4ade80;--warn:#fbbf24}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,"Segoe UI",sans-serif}
+header{border-bottom:1px solid var(--line);background:var(--panel)}
+.wrap{max-width:1100px;margin:auto;padding:0 16px}
+.top{display:flex;gap:10px 16px;align-items:center;flex-wrap:wrap;padding-top:14px;padding-bottom:14px}
+.logo{font-weight:700;font-size:18px;text-decoration:none;color:var(--fg)}
+.logo span{color:var(--acc)}
+.vivo{font-size:12px;color:var(--mut);display:flex;align-items:center;gap:6px;min-width:0;max-width:100%}
+.vivo span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+html,body{overflow-x:hidden}
+.punto{width:8px;height:8px;border-radius:50%;background:var(--ok)}
+.punto.off{background:var(--warn)}
+form{flex:1;min-width:220px;display:flex}
+input{flex:1;padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);font:inherit}
+main{padding:20px 0 40px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:20px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.k{font-size:12px;color:var(--mut)}.v{font-size:20px;font-weight:650;font-variant-numeric:tabular-nums}
+.grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:16px}
+@media (max-width:800px){.grid{grid-template-columns:minmax(0,1fr)}}
+form{min-width:0}
+@media (max-width:640px){form{flex-basis:100%}}
+section{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;min-width:0}
+h2{font-size:15px;margin:0 0 10px}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{text-align:left;color:var(--mut);font-weight:500;font-size:12px}
+td,th{padding:6px 6px;border-bottom:1px solid var(--line);white-space:nowrap}
+.scroll{overflow-x:auto}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+.mono{font-family:var(--mono);font-size:12.5px}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.det{margin-bottom:16px}
+.fila{display:grid;grid-template-columns:150px 1fr;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:14px}
+.fila>div:last-child{overflow-wrap:anywhere}
+@media (max-width:600px){.fila{grid-template-columns:1fr}}
+.pill{font-size:11px;padding:2px 8px;border-radius:99px;background:var(--line);color:var(--mut)}
+.pill.ok{background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok)}
+.pill.warn{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}
+.vacio{color:var(--mut);font-size:13px;padding:8px 0}
+.mas{color:var(--ok)}.menos{color:var(--warn)}
+</style>
+</head>
+<body>
+<header><div class="wrap top">
+  <a class="logo" href="#">⛓ mini<span>chain</span></a>
+  <div class="vivo"><span class="punto" id="punto"></span><span id="nodo">conectando…</span></div>
+  <form id="buscar"><input id="q" placeholder="Buscar bloque (número o hash), transacción o dirección mc…" autocomplete="off"></form>
+</div></header>
+<main class="wrap">
+  <div class="cards" id="cards"></div>
+  <div id="detalle"></div>
+  <div class="grid">
+    <section><h2>Últimos bloques</h2><div class="scroll"><table id="bloques"></table></div></section>
+    <div style="display:grid;gap:16px;align-content:start">
+      <section><h2>Pendientes (mempool)</h2><div id="mempool"></div></section>
+      <section><h2>Cuentas con más saldo</h2><div id="ricos"></div></section>
+    </div>
+  </div>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const mc = u => { const e = Math.trunc(u / 1e8), f = String(Math.abs(u % 1e8)).padStart(8,'0').replace(/0+$/,''); return e.toLocaleString('es') + (f ? ',' + f : '') + ' MC'; };
+const corto = h => esc(h.slice(0,10)) + '…' + esc(h.slice(-6));
+const hace = ms => { const s = Math.max(0, (Date.now() - ms) / 1000); return s < 60 ? `${s|0}s` : s < 3600 ? `${s/60|0} min` : `${s/3600|0} h`; };
+const enlace = (tipo, id, texto) => `<a href="#${tipo}/${encodeURIComponent(id)}">${texto ?? corto(id)}</a>`;
+const dir = d => d === 'COINBASE' ? '<span class="pill ok">recompensa</span>' : enlace('cuenta', d, `<span class="mono">${corto(d)}</span>`);
+async function api(r){ const x = await fetch('/api/' + r); const j = await x.json(); if(!x.ok) throw new Error(j.error || x.status); return j; }
+
+async function refrescar(){
+  try{
+    const [e, bs, mp, ricos] = await Promise.all([api('estado'), api('bloques?n=15'), api('mempool'), api('ricos')]);
+    $('#punto').className = 'punto'; $('#nodo').textContent = `${e.url} · ${e.pares.length} pares` + (e.minando ? ' · minando ⛏' : '');
+    const c = [['Altura', e.altura.toLocaleString('es')], ['Dificultad', e.dificultad + ' bits'], ['Recompensa', mc(e.recompensa)],
+      ['Circulante', mc(e.circulante)], ['Cuentas', e.cuentas], ['Pendientes', e.mempool]];
+    $('#cards').innerHTML = c.map(([k,v]) => `<div class="card"><div class="k">${k}</div><div class="v">${esc(v)}</div></div>`).join('');
+    $('#bloques').innerHTML = '<tr><th>#</th><th>Hash</th><th>Minero</th><th class="num">Tx</th><th class="num">Hace</th></tr>' +
+      bs.map(b => `<tr><td>${enlace('bloque', b.indice, b.indice)}</td><td class="mono">${enlace('bloque', b.hash)}</td><td>${b.indice ? dir(b.minero) : '<span class="pill">génesis</span>'}</td><td class="num">${b.num_tx}</td><td class="num">${hace(b.marca)}</td></tr>`).join('');
+    $('#mempool').innerHTML = mp.length ? '<table>' + mp.slice(0,10).map(t => `<tr><td class="mono">${enlace('tx', t.id)}</td><td class="num">${mc(t.cantidad)}</td></tr>`).join('') + '</table>' : '<div class="vacio">Nada pendiente.</div>';
+    $('#ricos').innerHTML = ricos.length ? '<table>' + ricos.slice(0,10).map(r => `<tr><td>${dir(r.direccion)}</td><td class="num">${mc(r.saldo)}</td></tr>`).join('') + '</table>' : '<div class="vacio">Aún nadie tiene saldo.</div>';
+  }catch(err){ $('#punto').className = 'punto off'; $('#nodo').textContent = 'sin conexión con el nodo'; }
+}
+
+function filas(pares){ return pares.map(([k,v]) => `<div class="fila"><div class="k">${k}</div><div>${v}</div></div>`).join(''); }
+function tablaTx(txs, yo){
+  if(!txs.length) return '<div class="vacio">Sin transacciones.</div>';
+  return '<div class="scroll"><table><tr><th>Id</th><th>De</th><th>A</th><th class="num">Cantidad</th><th class="num">Comisión</th>' + (yo ? '<th class="num">Bloque</th>' : '') + '</tr>' +
+    txs.map(t => { const signo = yo ? (t.a === yo ? '<span class="mas">+' : '<span class="menos">−') : '<span>';
+      return `<tr><td class="mono">${enlace('tx', t.id)}</td><td>${dir(t.de)}</td><td>${dir(t.a)}</td><td class="num">${signo}${mc(t.cantidad)}</span></td><td class="num">${mc(t.comision)}</td>` + (yo ? `<td class="num">${enlace('bloque', t.altura, t.altura)}</td>` : '') + '</tr>'; }).join('') + '</table></div>';
+}
+
+async function ruta(){
+  const [tipo, id] = decodeURIComponent(location.hash.slice(1)).split('/');
+  const d = $('#detalle');
+  if(!tipo){ d.innerHTML = ''; return; }
+  try{
+    if(tipo === 'bloque'){
+      const b = await api('bloque/' + id);
+      d.innerHTML = `<section class="det"><h2>Bloque ${b.indice}</h2>` + filas([
+        ['Hash', `<span class="mono">${esc(b.hash)}</span>`], ['Anterior', b.indice ? `<span class="mono">${enlace('bloque', b.previo, esc(b.previo))}</span>` : '—'],
+        ['Fecha', new Date(b.marca).toLocaleString('es')], ['Minero', dir(b.minero)], ['Dificultad', b.dificultad + ' bits'],
+        ['Nonce', b.nonce.toLocaleString('es')], ['Raíz Merkle', `<span class="mono">${esc(b.raiz)}</span>`]]) +
+        `<h2 style="margin-top:14px">Transacciones (${b.transacciones.length})</h2>${tablaTx(b.transacciones)}</section>`;
+    } else if(tipo === 'tx'){
+      const t = await api('tx/' + id);
+      d.innerHTML = `<section class="det"><h2>Transacción</h2>` + filas([
+        ['Id', `<span class="mono">${esc(t.id)}</span>`],
+        ['Estado', t.confirmada ? `<span class="pill ok">confirmada</span> en el bloque ${enlace('bloque', t.altura, t.altura)}` : '<span class="pill warn">pendiente</span>'],
+        ['De', dir(t.de)], ['A', dir(t.a)], ['Cantidad', mc(t.cantidad)], ['Comisión', mc(t.comision)], ['Nonce', t.nonce],
+        ['Firma', t.firma ? `<span class="mono">${corto(t.firma)}</span>` : '—']]) + '</section>';
+    } else if(tipo === 'cuenta'){
+      const c = await api('cuenta/' + id);
+      d.innerHTML = `<section class="det"><h2>Cuenta</h2>` + filas([
+        ['Dirección', `<span class="mono">${esc(c.direccion)}</span>`], ['Saldo', `<b>${mc(c.saldo)}</b>`],
+        ['Con pendientes', mc(c.saldo_pendiente)], ['Siguiente nonce', c.nonce]]) +
+        `<h2 style="margin-top:14px">Historial</h2>${tablaTx(c.historial, c.direccion)}</section>`;
+    }
+    d.scrollIntoView({behavior:'smooth', block:'start'});
+  }catch(err){ d.innerHTML = `<section class="det"><h2>No encontrado</h2><div class="vacio">${esc(err.message)}</div></section>`; }
+}
+
+$('#buscar').addEventListener('submit', e => {
+  e.preventDefault();
+  const q = $('#q').value.trim();
+  if(!q) return;
+  if(/^\d+$/.test(q)) location.hash = 'bloque/' + q;
+  else if(q.startsWith('mc')) location.hash = 'cuenta/' + q;
+  else api('bloque/' + q).then(() => location.hash = 'bloque/' + q).catch(() => location.hash = 'tx/' + q);
+});
+addEventListener('hashchange', ruta);
+refrescar(); ruta();
+setInterval(refrescar, 3000);
+</script>
+</body>
+</html>
